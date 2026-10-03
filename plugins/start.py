@@ -1,5 +1,5 @@
 # +++ ᴜɪ ʙʏ ᴀʜᴍᴇᴅ [telegram username: @ᴜʀʀ_sᴀɴᴊɪɪɪ] +++
-# --- Optimized for High Performance ---
+# --- Fully Optimized & Fixed for FORCE_MSG ---
 
 import asyncio
 import base64
@@ -13,6 +13,7 @@ from pyrogram import Client, filters
 from pyrogram.enums import ParseMode, ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
+
 from plugins.autoDelete import auto_del_notification, delete_message
 from bot import Bot
 from config import *
@@ -20,7 +21,10 @@ from helper_func import *
 from databases.database import db
 from databases.db_verify import *
 
-# Create a global dictionary to store chat data
+# Explicitly import message templates from FORMATS to avoid NameError
+from plugins.FORMATS import FORCE_MSG, START_MSG, TOKEN_PIC
+
+# Create a global dictionary to store chat data cache
 chat_data_cache = {}
 
 @Bot.on_message(filters.command('start') & filters.private & subscribed)
@@ -28,14 +32,12 @@ async def start_command(client: Client, message: Message):
     id = message.from_user.id
     MIN_VERIFY_TIME = 45
 
-    # 1. Silently check and add user without blocking other tasks
     if not await db.present_user(id):
         try:
             await db.add_user(id)
         except Exception as e:
             logging.error(f"Error adding user: {e}")
 
-    # 2. OPTIMIZATION: Fetch all DB configs in ONE single parallel execution
     VERIFY_EXPIRE, SHORTLINK_URL, SHORTLINK_API, TUT_VID, ADMINS, is_premium = await asyncio.gather(
         db.get_verified_time(),
         db.get_shortener_url(),
@@ -45,7 +47,6 @@ async def start_command(client: Client, message: Message):
         db.is_premium_user(id)
     )
 
-    # 3. Handle Verification Status
     if id in ADMINS or is_premium:
         verify_status = {
             'is_verified': True,
@@ -56,7 +57,6 @@ async def start_command(client: Client, message: Message):
     else:
         verify_status = await get_verify_status(id)
 
-    # 4. Token Logic
     if SHORTLINK_URL:
         if verify_status.get('is_verified') and VERIFY_EXPIRE < (time.time() - verify_status.get('verified_time', 0)):
             await update_verify_status(id, is_verified=False)
@@ -103,7 +103,6 @@ async def start_command(client: Client, message: Message):
                 ])
             )
 
-    # 5. File Delivery Logic (Fast Execution)
     if len(message.command) > 1:
         try:
             base64_string = message.command[1]
@@ -131,7 +130,6 @@ async def start_command(client: Client, message: Message):
         except Exception:
             return await message.reply("<b><i>sᴏᴍᴇᴛʜɪɴɢ ᴡᴇɴᴛ ᴡʀᴏɴɢ..!</i></b>")
 
-        # Fetch message customization settings concurrently
         AUTO_DEL, DEL_TIMER, HIDE_CAPTION, CHNL_BTN, PROTECT_MODE = await asyncio.gather(
             db.get_auto_delete(), db.get_del_timer(), db.get_hide_caption(), db.get_channel_button(), db.get_protect_content()
         )
@@ -150,9 +148,8 @@ async def start_command(client: Client, message: Message):
 
             try:
                 copied_msg = await msg.copy(chat_id=id, caption=caption, parse_mode=ParseMode.HTML, reply_markup=reply_markup, protect_content=PROTECT_MODE)
-                await asyncio.sleep(0.05) # Reduced sleep for faster delivery
+                await asyncio.sleep(0.05)
             except FloodWait as e:
-                # Optimized Floodwait Handling for Pyrogram v2+
                 await asyncio.sleep(getattr(e, 'value', 2) + 0.5) 
                 copied_msg = await msg.copy(chat_id=id, caption=caption, parse_mode=ParseMode.HTML, reply_markup=reply_markup, protect_content=PROTECT_MODE)
             except Exception:
@@ -165,8 +162,7 @@ async def start_command(client: Client, message: Message):
         if AUTO_DEL and last_message:
             asyncio.create_task(auto_del_notification(client.username, last_message, DEL_TIMER, message.command[1]))
 
-    # Normal /start behavior
-    else:
+    else:   
         try:
             await message.reply_photo(
                 photo=random.choice(PICS),
@@ -187,10 +183,6 @@ async def start_command(client: Client, message: Message):
         except Exception: pass
 
 
-##===================================================================================================================##
-# OPTIMIZED: FORCE SUB CHECKING WITHOUT LOADING ANIMATIONS OR CHAT ACTIONS
-##===================================================================================================================##
-
 @Bot.on_message(filters.command('start') & filters.private & ~banUser)
 async def not_joined(client: Client, message: Message):
     user_id = message.from_user.id
@@ -199,7 +191,6 @@ async def not_joined(client: Client, message: Message):
     not_joined_any = False
 
     try:
-        # Check channels directly without unnecessary API loading animations
         for chat_id in await db.get_all_channels():
             if not await is_userJoin(client, user_id, chat_id):
                 not_joined_any = True
@@ -217,11 +208,9 @@ async def not_joined(client: Client, message: Message):
 
                 buttons.append([InlineKeyboardButton(text='» ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ «', url=link)])
 
-        # If user joined everything, return so the 'subscribed' handler can take over
         if not not_joined_any:
             return 
 
-        # Add Request Links if available
         if REQFSUB:
             byt_links = await db.get_all_fsub_button_links()
             if byt_links:
