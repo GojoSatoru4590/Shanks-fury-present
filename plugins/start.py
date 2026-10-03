@@ -1,5 +1,5 @@
 # +++ ᴜɪ ʙʏ ᴀʜᴍᴇᴅ [telegram username: @ᴜʀʀ_sᴀɴᴊɪɪɪ] +++
-# --- Fully Optimized & Fixed for FORCE_MSG ---
+# --- Fully Optimized & Import Fixed ---
 
 import asyncio
 import base64
@@ -21,8 +21,9 @@ from helper_func import *
 from databases.database import db
 from databases.db_verify import *
 
-# Explicitly import message templates from FORMATS to avoid NameError
-from plugins.FORMATS import FORCE_MSG, START_MSG, TOKEN_PIC
+# FIX: Only importing START_MSG and FORCE_MSG from FORMATS.
+# TOKEN_PIC, PICS, and CUSTOM_CAPTION are already naturally imported via 'from config import *'
+from plugins.FORMATS import FORCE_MSG, START_MSG
 
 # Create a global dictionary to store chat data cache
 chat_data_cache = {}
