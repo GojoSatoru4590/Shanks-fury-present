@@ -1,6 +1,5 @@
 # +++ Ui Made By Sanjiii [telegram username: @Urr_Sanjiii] +++
-
-
+# --- Optimized helper_func.py ---
 
 import binascii
 import base64
@@ -17,6 +16,7 @@ import time
 from datetime import datetime
 from databases.database import db
 import pytz
+
 #=============================================================================================================================================================================
 # -------------------- HELPER FUNCTIONS FOR USER VERIFICATION IN DIFFERENT CASES -------------------- 
 #=============================================================================================================================================================================
@@ -26,8 +26,7 @@ async def check_banUser(filter, client, update):
     try:
         user_id = update.from_user.id
         return await db.ban_user_exist(user_id)
-    except: #Exception as e:
-        #print(f"!Error on check_banUser(): {e}")
+    except:
         return False
 
 
@@ -40,8 +39,7 @@ async def check_admin(filter, client, update):
         print(f"! Exception in check_admin: {e}")
         return False
 
-
-# Check user subscription in Channels in a more optimized way
+# OPTIMIZED is_subscribed function
 async def is_subscribed(filter, client, update):
     Channel_ids = await db.get_all_channels()
     
@@ -50,40 +48,41 @@ async def is_subscribed(filter, client, update):
 
     user_id = update.from_user.id
 
-    if any([user_id == OWNER_ID, await db.admin_exist(user_id)]):
+    if user_id == OWNER_ID or await db.admin_exist(user_id):
         return True
 
-    # Handle the case for a single channel directly (no need for gather)
-    if len(Channel_ids) == 1:
-        return await is_userJoin(client, user_id, Channel_ids[0])
+    # Use asyncio gather to check all channels simultaneously. 
+    # This prevents the bot from waiting for one channel query before starting the next.
+    tasks = [is_userJoin(client, user_id, channel_id) for channel_id in Channel_ids if channel_id]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Use asyncio gather to check multiple channels concurrently
-    tasks = [is_userJoin(client, user_id, ids) for ids in Channel_ids if ids]
-    results = await asyncio.gather(*tasks)
+    # Check if ANY of the results evaluated to False (meaning user isn't in that channel)
+    # This is much faster as it checks the final list of boolean values
+    for result in results:
+        if not result or isinstance(result, Exception):
+            return False
+            
+    return True
 
-    # If any result is False, return False; else return True
-    return all(results)
-
-
-#Chcek user subscription by specifying channel id and user id
+# Check user subscription by specifying channel id and user id
 async def is_userJoin(client, user_id, channel_id):
-    #REQFSUB = await db.get_request_forcesub()
     try:
         member = await client.get_chat_member(chat_id=channel_id, user_id=user_id)
         return member.status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER}
         
     except UserNotParticipant:
-        if await db.get_request_forcesub(): #and await privateChannel(client, channel_id):
-                return await db.reqSent_user_exist(channel_id, user_id)
+        # If user is not participant, quickly check request mode without waiting for extra network calls if possible
+        if await db.get_request_forcesub(): 
+            return await db.reqSent_user_exist(channel_id, user_id)
             
         return False
         
     except Exception as e:
-        print(f"!Error on is_userJoin(): {e}")
+        # Log minimal info, return False to force sub if anything fails
+        # print(f"!Error on is_userJoin(): {e}")
         return False
+        
 #=============================================================================================================================================================================
-#=============================================================================================================================================================================
-
 
 async def get_shortlink(url, api, link):
     shortzy = Shortzy(api_key=api, base_site=url)
@@ -101,7 +100,7 @@ async def encode(string):
 
 async def decode(base64_string):
     try:
-        base64_string = base64_string.strip("=") # links generated before this commit will be having = sign, hence striping them to handle padding errors.
+        base64_string = base64_string.strip("=")
         base64_bytes = (base64_string + "=" * (-len(base64_string) % 4)).encode("ascii")
         string_bytes = base64.urlsafe_b64decode(base64_bytes) 
         string = string_bytes.decode("ascii")
@@ -122,7 +121,7 @@ async def get_messages(client, message_ids):
                     message_ids=temb_ids
                 )
             except FloodWait as e:
-                await asyncio.sleep(e.x)
+                await asyncio.sleep(e.value) # Using e.value for newer Pyrogram versions
                 msgs = await client.get_messages(
                     chat_id=client.db_channel.id,
                     message_ids=temb_ids
@@ -130,7 +129,8 @@ async def get_messages(client, message_ids):
             except:
                 pass
             total_messages += len(temb_ids)
-            messages.extend(msgs)
+            if 'msgs' in locals() and msgs:
+                messages.extend(msgs)
         return messages
     except Exception as e:
         print(f'Error occured on get_messages, reason: {e}')
@@ -159,15 +159,14 @@ async def get_message_id(client, message):
     else:
         return 0
 
-
 def get_exp_time(seconds):
     periods = [('days', 86400), ('hours', 3600), ('mins', 60), ('secs', 1)]
     result = ''
     for period_name, period_seconds in periods:
         if seconds >= period_seconds:
             period_value, seconds = divmod(seconds, period_seconds)
-            result += f'{int(period_value)} {period_name}'
-    return result
+            result += f'{int(period_value)} {period_name} '
+    return result.strip()
 
 
 def get_readable_time(seconds: int) -> str:
@@ -190,70 +189,6 @@ def get_readable_time(seconds: int) -> str:
     time_list.reverse()
     up_time += ":".join(time_list)
     return up_time
-
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-#Check user subscription in Channels
-"""async def is_subscribed(filter, client, update):
-    Channel_ids = await db.get_all_channels()
-    
-    if not Channel_ids:
-        return True
-
-    user_id = update.from_user.id
-
-    if any([user_id == OWNER_ID, await db.admin_exist(user_id)]):
-        return True
-        
-    member_status = ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER
-    
-    REQFSUB = await db.get_request_forcesub()
-                    
-    for id in Channel_ids:
-        if not id:
-            continue
-            
-        try:
-            member = await client.get_chat_member(chat_id=id, user_id=user_id)
-        except UserNotParticipant:
-            member = None
-            if REQFSUB and await privateChannel(client, id):
-                if not await db.reqSent_user_exist(id, user_id):
-                    return False
-            else:
-                return False
-                
-        if member:
-            if member.status not in member_status:
-                if REQFSUB and await privateChannel(client, id):
-                    if not await db.reqSent_user_exist(id, user_id):
-                        return False
-                else:
-                    return False
-
-    return True"""
-
-#Check user subscription in Channels in More Simpler way
-"""async def is_subscribed(filter, client, update):
-    Channel_ids = await db.get_all_channels()
-    
-    if not Channel_ids:
-        return True
-
-    user_id = update.from_user.id
-
-    if any([user_id == OWNER_ID, await db.admin_exist(user_id)]):
-        return True
-
-    for ids in Channel_ids:
-        if not ids:
-            continue
-            
-        if not await is_userJoin(client, user_id, ids):
-            return False
-            
-    return True"""
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 
 subscribed = filters.create(is_subscribed)
 is_admin = filters.create(check_admin)
